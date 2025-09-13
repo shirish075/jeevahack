@@ -1,0 +1,5 @@
+fastapi
+supabase
+pandas
+scikit-learn
+uvicorn
