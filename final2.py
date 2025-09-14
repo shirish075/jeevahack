@@ -38,7 +38,14 @@ from datetime import datetime
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from fastapi import FastAPI
+from supabase import create_client
+from datetime import datetime
 # ------------------------------
 # Supabase Client
 # ------------------------------
@@ -215,3 +222,4 @@ async def analytics_summary():
 @app.get("/")
 async def root():
     return {"message": "Subscription Analytics API is running 🚀"}
+
