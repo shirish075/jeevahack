@@ -1,3 +1,37 @@
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+
+# ------------------------------
+# Helper: Churn Prediction
+# ------------------------------
+def add_churn_prediction(df: pd.DataFrame):
+    """Adds churn prediction column to dataframe"""
+    if df.empty:
+        df["ChurnPrediction"] = None
+        return df
+
+    # Create synthetic churn label for training
+    df['churn_label'] = (df['UsageRatio'] < 0.2).astype(int)
+
+    # Select features
+    X = df[['data_used', 'plan_price', 'data_quota']].fillna(0)
+    y = df['churn_label']
+
+    if y.nunique() == 1:  # if all labels are the same
+        df['ChurnPrediction'] = y
+        return df
+
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Model
+    model = RandomForestClassifier(random_state=42)
+    model.fit(X_train, y_train)
+
+    # Predict on full dataset
+    df['ChurnPrediction'] = model.predict(X)
+
+    return df.drop(columns=['churn_label'])
 from fastapi import FastAPI
 from supabase import create_client
 from datetime import datetime
@@ -111,6 +145,8 @@ async def user_recommendation(user_id: str):
 
     user["Recommendation"] = user.apply(rule_based_recommendation, axis=1)
     user = cluster_recommendation(user)
+    user = add_churn_prediction(user)
+
     today = pd.Timestamp(datetime.now())
     user["RenewalDue"] = user["end_date"].apply(
         lambda x: (pd.to_datetime(x) - today).days if pd.notnull(x) else None
@@ -118,7 +154,7 @@ async def user_recommendation(user_id: str):
 
     return user[[
         "user_id", "name", "role", "plan_name", "data_quota", "data_used",
-        "UsageRatio", "Recommendation", "ClusterReco", "RenewalDue"
+        "UsageRatio", "Recommendation", "ClusterReco", "ChurnPrediction", "RenewalDue"
     ]].to_dict(orient="records")[0]
 
 # ------------------------------
@@ -132,6 +168,8 @@ async def admin_recommendations():
 
     df["Recommendation"] = df.apply(rule_based_recommendation, axis=1)
     df = cluster_recommendation(df)
+    df = add_churn_prediction(df)
+
     today = pd.Timestamp(datetime.now())
     df["RenewalDue"] = df["end_date"].apply(
         lambda x: (pd.to_datetime(x) - today).days if pd.notnull(x) else None
@@ -147,11 +185,28 @@ async def admin_recommendations():
     return {
         "users": df[[
             "user_id", "name", "role", "plan_name", "data_quota", "data_used",
-            "UsageRatio", "Recommendation", "ClusterReco", "RenewalDue"
+            "UsageRatio", "Recommendation", "ClusterReco", "ChurnPrediction", "RenewalDue"
         ]].to_dict(orient="records"),
         "plan_summary": plan_summary,
         "average_usage_ratio": avg_usage,
         "renewals_due_soon": renewals_due
+    }
+
+
+# ------------------------------
+# ANALYTICS SUMMARY Endpoint
+# ------------------------------
+@app.get("/analytics/summary")
+async def analytics_summary():
+    df = fetch_subscriptions()
+    if df is None or df.empty:
+        return {"error": "No subscription data"}
+    # Use 'role' as status and 'data_used' as usage (GB)
+    status_counts = df['role'].value_counts().to_dict()
+    avg_usage = round(df['data_used'].mean(), 2)
+    return {
+        "status_distribution": status_counts,
+        "average_usage_gb": avg_usage
     }
 
 # ------------------------------
